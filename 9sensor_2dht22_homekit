@@ -164,7 +164,7 @@ void setup() {
     new DEV_HumSensor2();
   
   // Add Relays
-  int relayPins[9] = {4, 15, 16, 17, 18, 19, 21, 22, 23};
+  int relayPins[9] = {4, 15, 16, 17, 18, 19, 2, 22, 23};
   for (int i = 0; i < 9; ++i) {
     new SpanAccessory();
     new Service::AccessoryInformation();
