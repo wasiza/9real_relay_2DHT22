@@ -1,0 +1,179 @@
+#include <WiFi.h>
+#include "HomeSpan.h"
+#include "DHT.h"
+
+#define DHTPIN 21 // Pin for the first DHT22 sensor
+#define DHTPIN2 13 // Pin for the second DHT22 sensor
+#define DHTTYPE DHT22
+
+const char* ssid = "oumta";
+const char* password = "03269696";
+
+DHT dht1(DHTPIN, DHTTYPE); // First DHT22 sensor
+DHT dht2(DHTPIN2, DHTTYPE); // Second DHT22 sensor
+
+class SimpleRelay : public Service::Switch {
+public:
+  SpanCharacteristic *powerState;
+  int relayPin;
+
+  SimpleRelay(int pin) : Service::Switch() {
+    powerState = new Characteristic::On();
+    relayPin = pin;
+    pinMode(relayPin, OUTPUT);
+    digitalWrite(relayPin, LOW);  // Assuming active HIGH relay. Switch to HIGH if you have an active LOW relay.
+  }
+
+  boolean update() {
+    if (powerState->getVal()) {
+      digitalWrite(relayPin, HIGH);
+    } else {
+      digitalWrite(relayPin, LOW);
+    }
+    return true;  // Returns true if update is successful
+  }
+};
+
+struct DEV_Identify : Service::AccessoryInformation {
+  int nBlinks;
+  SpanCharacteristic *identify;
+
+  DEV_Identify(const char *name, const char *manu, const char *sn, const char *model, const char *version, int nBlinks) : Service::AccessoryInformation(){
+    new Characteristic::Name(name);
+    new Characteristic::Manufacturer(manu);
+    new Characteristic::SerialNumber(sn);    
+    new Characteristic::Model(model);
+    new Characteristic::FirmwareRevision(version);
+    identify = new Characteristic::Identify();
+    this->nBlinks = nBlinks;
+    pinMode(homeSpan.getStatusPin(),OUTPUT);
+  }
+
+  boolean update(){
+    for(int i = 0; i < nBlinks; i++) {
+      digitalWrite(homeSpan.getStatusPin(),LOW);
+      delay(250);
+      digitalWrite(homeSpan.getStatusPin(),HIGH);
+      delay(250);
+    }
+    return(true);
+  }
+};
+
+struct DEV_TempSensor : Service::TemperatureSensor {
+  SpanCharacteristic *temp;
+  
+  DEV_TempSensor() : Service::TemperatureSensor() {
+    dht1.begin();
+    temp = new Characteristic::CurrentTemperature(-10.0);
+    temp->setRange(-50, 100);
+  }
+
+  void loop() {
+    if(temp->timeVal() > 10000) {
+      float temperature = dht1.readTemperature();
+      temp->setVal(temperature);
+    }
+  }
+};
+
+struct DEV_HumSensor : Service::HumiditySensor {
+  SpanCharacteristic *hum;
+
+  DEV_HumSensor() : Service::HumiditySensor() {
+    dht1.begin();
+    hum = new Characteristic::CurrentRelativeHumidity(50);
+    hum->setRange(30, 100);
+  }
+
+  void loop() {
+    if(hum->timeVal() > 10000) {
+      float humidity = dht1.readHumidity();
+      hum->setVal(humidity);
+    }
+  }
+};
+
+struct DEV_TempSensor2 : Service::TemperatureSensor {
+  SpanCharacteristic *temp;
+  
+  DEV_TempSensor2() : Service::TemperatureSensor() {
+    dht2.begin();
+    temp = new Characteristic::CurrentTemperature(-10.0);
+    temp->setRange(-50, 100);
+  }
+
+  void loop() {
+    if(temp->timeVal() > 10000) {
+      float temperature = dht2.readTemperature();
+      temp->setVal(temperature);
+    }
+  }
+};
+
+struct DEV_HumSensor2 : Service::HumiditySensor {
+  SpanCharacteristic *hum;
+
+  DEV_HumSensor2() : Service::HumiditySensor() {
+    dht2.begin();
+    hum = new Characteristic::CurrentRelativeHumidity(50);
+    hum->setRange(30, 100);
+  }
+
+  void loop() {
+    if(hum->timeVal() > 10000) {
+      float humidity = dht2.readHumidity();
+      hum->setVal(humidity);
+    }
+  }
+};
+
+void setup() {
+  Serial.begin(115200);
+
+  // Wi-Fi Connection
+  Serial.print("Connecting to Wi-Fi");
+  WiFi.begin(ssid, password);
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println("Connected!");
+
+  homeSpan.begin(Category::Bridges,"AZDelivery Temp Sensor Bridge");
+
+  new SpanAccessory();
+    new DEV_Identify("AZDelivery HomeKit","SmartHomeFactory","123-ABC","HS Bridge","0.9",3);
+    new Service::HAPProtocolInformation();
+      new Characteristic::Version("1.1.0");
+
+  new SpanAccessory();
+    new DEV_Identify("DHT22 Temp Sensor","SmartHomeFactory","123-ABC","Sensor","0.9",0);
+    new DEV_TempSensor();
+
+  new SpanAccessory();
+    new DEV_Identify("DHT22 Humidity Sensor","SmartHomeFactory","123-ABC","Sensor","0.9",0);
+    new DEV_HumSensor();
+
+  new SpanAccessory();
+    new DEV_Identify("DHT22 Temp Sensor 2","SmartHomeFactory","123-ABC","Sensor","0.9",0);
+    new DEV_TempSensor2();
+
+  new SpanAccessory();
+    new DEV_Identify("DHT22 Humidity Sensor 2","SmartHomeFactory","123-ABC","Sensor","0.9",0);
+    new DEV_HumSensor2();
+  
+  // Add Relays
+  int relayPins[9] = {4, 15, 16, 17, 18, 19, 21, 22, 23};
+  for (int i = 0; i < 9; ++i) {
+    new SpanAccessory();
+    new Service::AccessoryInformation();
+    new Characteristic::Identify();
+    new SimpleRelay(relayPins[i]);
+    digitalWrite(relayPins[i], HIGH);
+  }
+}
+
+void loop(){
+  homeSpan.poll();
+}
